@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Care teacher camera</title>
+<style>
+:root{--bg:#f4f1ea;--card:#fffdf8;--ink:#23312d;--mut:#6b766f;--line:#e4dfd2;--ok:#2f7d62;--warn:#b7791f;--bad:#b4483a}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,Segoe UI,Roboto,sans-serif}
+header{padding:14px 20px;background:var(--card);border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:center}h1{font-size:18px;margin:0}
+main{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:16px;padding:16px 20px;max-width:1200px;margin:auto}@media(max-width:900px){main{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}.card h2{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--mut);margin:0 0 10px}
+#wrap{position:relative;background:#111;border-radius:10px;overflow:hidden;aspect-ratio:16/9}video,#ov{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+#lab{position:absolute;left:12px;top:12px;background:rgba(10,15,13,.78);color:#fff;padding:8px 14px;border-radius:10px;font-size:22px;font-weight:600}
+button{background:#fff;border:1px solid var(--line);border-radius:9px;padding:8px 12px;font:inherit;cursor:pointer}button.p{background:var(--ok);color:#fff;border-color:var(--ok)}button:disabled{opacity:.5}
+select,input{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:#fff}
+.msg{padding:9px 12px;border-radius:9px;margin-top:10px;background:#eef3f8;color:#274a6f}.msg.warn{background:#fbf1de;color:#7a4e0c}.msg.bad{background:#f8e6e3;color:#7d2a20}.msg.ok{background:#e6f3ed;color:#1f5b45}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}ol{margin:6px 0 0 18px;padding:0}li{margin:3px 0}
+#prog{height:10px;background:#ece7da;border-radius:9px;overflow:hidden;margin-top:10px}#prog i{display:block;height:100%;width:0;background:var(--ok)}
+#big{font-size:26px;font-weight:700;margin-top:10px}
+</style></head><body>
+<header><h1>Care teacher camera</h1><span style="color:var(--mut)">fixed webcam · teaches Wi-Fi during set-up · video never leaves this page</span></header>
+<main>
+ <section class="card"><h2>Camera view</h2>
+  <div id="wrap"><video id="v" playsinline muted></video><canvas id="ov"></canvas><div id="lab">–</div></div>
+  <div class="row"><button id="lock">Lock this view</button><button id="unlock">Forget locked view</button><span id="viewst" style="color:var(--mut)">view not locked</span></div>
+  <div id="cmsg" class="msg">starting camera…</div>
+ </section>
+ <section class="card"><h2>Record</h2>
+  <div class="row"><label>Session <select id="sess"><option value="train">train</option><option value="test">test (held-out)</option></select></label>
+  <label>Round <input id="rnd" type="number" min="1" value="1" style="width:70px"></label></div>
+  <div class="row"><button class="p" id="go">Start guided recording</button><button id="stop" disabled>Stop</button></div>
+  <div id="big">–</div><div id="instr" style="color:var(--mut)">Press start. Each posture has a short get-ready time, then it records.</div><div id="prog"><i></i></div>
+  <div id="rmsg" class="msg" style="display:none"></div>
+  <h2 style="margin-top:18px">Placement checklist</h2>
+  <ol><li>Mount the camera once, about 1.5–2 m high, so the whole room including the bed is in view. Then press <b>Lock this view</b>.</li>
+  <li>Record 3 rounds (different times of day) as <b>train</b>, and 1 round on another day as <b>test</b>.</li>
+  <li>Do not move the camera or the sensors afterwards. If the page says the view changed, re-lock and re-record that round.</li>
+  <li>Everyone in view should know they are being watched during set-up. Close this page when finished; the camera is only a teacher.</li></ol>
+ </section>
+</main>
+<script type="module">
+import { PoseLandmarker, FilesetResolver } from "/vendor/mediapipe/vision_bundle.mjs";
+import { sample, makeClassifier, viewShift } from "./care_pose_rules.js";
+const $=s=>document.querySelector(s), sleep=ms=>new Promise(r=>setTimeout(r,ms)), TAB=Math.random().toString(36).slice(2);
+const NAME={nobody:"Nobody",standing:"Standing",sitting:"Sitting",lying:"Lying down",walking:"Walking",unsure:"not sure"};
+const STEPS=[{l:"nobody",secs:15,lead:8,go:"Leave the camera's view"},{l:"standing",secs:15,lead:5,go:"Stand, whole body in view"},{l:"sitting",secs:20,lead:6,go:"Sit on the chair"},
+ {l:"lying",secs:20,lead:8,go:"Lie on the bed, as you normally would"},{l:"walking",secs:20,lead:5,go:"Walk back and forth"}];
+const video=$("#v"),ov=$("#ov"),clf=makeClassifier(); let camLabel="unsure",lastSent=0,lastSample=-1e9,lm_=null,recording=false,stopReq=false;
+const LS="care_teacher_v1"; const store={get(){try{return JSON.parse(localStorage.getItem(LS)||"{}")}catch(e){return{}}},set(o){try{localStorage.setItem(LS,JSON.stringify({...store.get(),...o}))}catch(e){}}};
+/* fixed-view guard: a 32x18 gray thumbnail of the empty scene; compared only while nobody is in view */
+const th=document.createElement("canvas");th.width=32;th.height=18;const tg=th.getContext("2d",{willReadFrequently:true});
+function thumb(){tg.drawImage(video,0,0,32,18);const d=tg.getImageData(0,0,32,18).data,o=new Uint8Array(32*18);for(let i=0;i<o.length;i++)o[i]=.3*d[i*4]+.59*d[i*4+1]+.11*d[i*4+2];return o}
+let ref=null;try{const r=store.get().ref;if(r)ref=Uint8Array.from(r)}catch(e){}
+function viewMsg(){$("#viewst").textContent=ref?"view locked":"view not locked"}viewMsg();
+$("#lock").onclick=()=>{if(camLabel!=="nobody"){say("#cmsg","Lock the view while the room is empty (nobody in the picture).","warn");return}ref=thumb();store.set({ref:Array.from(ref)});viewMsg();say("#cmsg","View locked. If the camera or the room layout changes, this page will warn you.","ok")};
+$("#unlock").onclick=()=>{ref=null;store.set({ref:null});viewMsg()};
+function say(sel,t,k){const e=$(sel);e.style.display="block";e.textContent=t;e.className="msg "+(k||"")}
+let shiftBad=0;setInterval(()=>{if(!ref||video.readyState<2||camLabel!=="nobody")return;const d=viewShift(ref,thumb());
+ if(d>18){shiftBad++;if(shiftBad>=3)say("#cmsg",`The picture differs from the locked view (difference ${d.toFixed(0)}). Camera moved, light changed, or furniture moved. Do not record until this is checked.`,"warn")}else{shiftBad=0}},2000);
+window.__viewMoved=()=>shiftBad>=3;
+const BONES=[[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24],[23,25],[25,27],[24,26],[26,28]];
+function draw(lm){ov.width=video.videoWidth||640;ov.height=video.videoHeight||360;const c=ov.getContext("2d");c.clearRect(0,0,ov.width,ov.height);if(!lm)return;c.strokeStyle="#9ce2c2";c.lineWidth=4;c.lineCap="round";
+ for(const [a,b] of BONES){if((lm[a].visibility??1)<.4||(lm[b].visibility??1)<.4)continue;c.beginPath();c.moveTo(lm[a].x*ov.width,lm[a].y*ov.height);c.lineTo(lm[b].x*ov.width,lm[b].y*ov.height);c.stroke()}}
+function onFrame(lm,now){if(now-lastSample>=125){lastSample=now;clf.feed(sample(lm,now));camLabel=clf.label(now);$("#lab").textContent=NAME[camLabel]}
+ if(now-lastSent>100){lastSent=now;fetch("/api/pose",{method:"POST",body:JSON.stringify({label:camLabel,tab:TAB})}).catch(()=>{})}}
+async function startCamera(){try{
+ const fs=await FilesetResolver.forVisionTasks(new URL("/vendor/mediapipe/wasm",location.href).href);
+ const lmk=await PoseLandmarker.createFromOptions(fs,{baseOptions:{modelAssetPath:"/vendor/mediapipe/pose_landmarker_full.task",delegate:"GPU"},runningMode:"VIDEO",numPoses:1});
+ const st=store.get();let s;try{s=await navigator.mediaDevices.getUserMedia({video:{deviceId:st.dev?{exact:st.dev}:undefined,width:1280,height:720},audio:false})}catch(e){s=await navigator.mediaDevices.getUserMedia({video:{width:1280,height:720},audio:false})}
+ store.set({dev:s.getVideoTracks()[0].getSettings().deviceId});video.srcObject=s;await video.play();
+ say("#cmsg","Camera running locally. Frame the whole room including the bed, then lock the view while the room is empty.");let lastT=-1;
+ const tick=()=>{const now=performance.now();if(video.readyState>=2&&video.currentTime!==lastT){lastT=video.currentTime;const r=lmk.detectForVideo(video,now);lm_=r.landmarks&&r.landmarks[0];draw(lm_);onFrame(lm_,now)}requestAnimationFrame(tick)};tick();
+}catch(e){say("#cmsg","Camera or pose model error: "+e.message+" (run python install.py once to fetch the pose model, and allow camera access)","bad");console.error(e)}}
+startCamera();
+/* ---- guided recording ---- */
+async function api(p,b){const r=await fetch(p,{method:"POST",body:JSON.stringify(b)});return r.json().catch(()=>({}))}
+$("#stop").onclick=()=>{stopReq=true};
+$("#go").onclick=async()=>{ if(recording)return; if(window.__viewMoved()){say("#rmsg","The camera view changed since it was locked. Check it first.","warn");return}
+ recording=true;stopReq=false;$("#go").disabled=true;$("#stop").disabled=false;const sess=$("#sess").value,rnd=+$("#rnd").value||1;let mism=[];
+ for(const s of STEPS){if(stopReq)break;
+  for(let i=s.lead;i>0&&!stopReq;i--){$("#big").textContent=NAME[s.l];$("#instr").textContent=`${s.go} — get ready ${i}s`;$("#prog i").style.width="0";await sleep(1000)}
+  if(stopReq)break;const r=await api("/api/move/rec",{on:true,session:sess,round:rnd});if(r.error){say("#rmsg",r.error,"bad");break}
+  let ok=0,n=0;for(let i=0;i<s.secs*4&&!stopReq;i++){$("#instr").textContent=`recording ${s.go} — camera sees: ${NAME[camLabel]}`;$("#prog i").style.width=(100*i/(s.secs*4))+"%";n++;if(camLabel===s.l)ok++;await sleep(250)}
+  await api("/api/move/rec",{on:false});if(n&&ok/n<.7)mism.push(`${NAME[s.l]} (camera agreed ${Math.round(100*ok/n)}%)`)}
+ recording=false;$("#go").disabled=false;$("#stop").disabled=true;$("#big").textContent="Done";$("#prog i").style.width="100%";
+ say("#rmsg",mism.length?"Camera disagreed with the instruction for: "+mism.join(", ")+". The Wi-Fi windows are labelled with what the camera saw, not what was asked, so re-record those if the camera was wrong.":"Round recorded. Camera labels matched every instruction.",mism.length?"warn":"ok")};
+window.__teacher={get label(){return camLabel},clf};
+</script></body></html>

@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Care Room 3D · sensor mesh</title>
+<style>
+:root{--ink:#e8efe9;--mut:#9fb0a6;--bg:#0f1714;--panel:rgba(15,23,20,.78);--line:#2a3a33}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,Segoe UI,Roboto,sans-serif;overflow:hidden}
+canvas{display:block}
+.panel{position:absolute;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;backdrop-filter:blur(6px)}
+#top{left:14px;top:14px;min-width:270px}#top h1{margin:0 0 6px;font-size:13px;letter-spacing:.09em;text-transform:uppercase;color:var(--mut);font-weight:650}
+#st{font-size:26px;font-weight:700}#sub{color:var(--mut);font-size:13px;margin-top:2px}
+.badge{display:inline-block;font:700 10px/1 system-ui;letter-spacing:.08em;padding:4px 8px;border-radius:99px;border:1px solid;margin-left:8px;vertical-align:3px}
+.SYNTHETIC{color:#e6b050;background:#3a2d12}.LIVE{color:#6fd1a3;background:#12301f}
+#ev{right:14px;top:14px;width:300px}#ev h1{margin:0 0 8px;font-size:13px;letter-spacing:.09em;text-transform:uppercase;color:var(--mut);font-weight:650}
+.erow{display:grid;grid-template-columns:62px 1fr 38px;gap:8px;align-items:center;font-size:12.5px;margin:3px 0}
+.erow i{display:block;height:7px;border-radius:5px;background:#6fd1a3}.erow span{color:var(--mut);text-align:right}
+#ev small{display:block;color:var(--mut);margin-top:8px;font-size:11.5px}
+#cams{left:14px;bottom:14px;display:flex;gap:6px;padding:8px}
+button{background:#1c2b25;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font:inherit;cursor:pointer}button.on{background:#2f7d62;border-color:#2f7d62}
+#warn{left:50%;transform:translateX(-50%);bottom:18px;max-width:560px;display:none;border-color:#b4483a;background:rgba(60,20,16,.85)}
+#note{right:14px;bottom:14px;max-width:300px;font-size:11.5px;color:var(--mut)}
+</style></head><body>
+<div class="panel" id="top"><h1>Care Room · sensor mesh <span class="badge" id="src">…</span></h1><div id="st">—</div><div id="sub">waiting for sensors</div></div>
+<div class="panel" id="ev"><h1>Evidence (why this answer)</h1><div id="evl"></div><small>Bars = how far each link is from its own quiet level, right now. A posture that is supported by many links is more trustworthy than one that rests on a single link.</small></div>
+<div class="panel" id="cams"></div>
+<div class="panel" id="warn"></div>
+<div class="panel" id="note">Wellbeing view, not a medical device. No falls, sleep stages or vitals are detected.</div>
+<script type="importmap">{"imports":{"three":"./lib/three/three.module.js"}}</script>
+<script type="module">
+import * as THREE from "three";
+const $=s=>document.querySelector(s);
+const NAMES={nobody:"Nobody in the room",standing:"Standing",sitting:"Sitting",lying:"Lying down",walking:"Walking"};
+const COLS={red:0xe0574a,green:0x39b97a,blue:0x4b8fd6};
+let cfg={boards:[{id:1,colour:"red"},{id:2,colour:"green"},{id:3,colour:"blue"}]};
+fetch("/api/config").then(r=>r.json()).then(c=>{cfg=c;$("#src").textContent=c.source||"LIVE";$("#src").className="badge "+(c.source||"LIVE");buildNodes()}).catch(()=>{});
+
+/* ---- scene ---- */
+const R=new THREE.WebGLRenderer({antialias:true});R.setPixelRatio(Math.min(devicePixelRatio,2));document.body.prepend(R.domElement);
+const S=new THREE.Scene();S.background=new THREE.Color(0x0f1714);S.fog=new THREE.Fog(0x0f1714,14,30);
+const cam=new THREE.PerspectiveCamera(45,1,.1,100);
+S.add(new THREE.HemisphereLight(0xcfe8dc,0x1a2420,.9));const dl=new THREE.DirectionalLight(0xffffff,.8);dl.position.set(4,8,3);S.add(dl);
+const W=6,D=5;   // room 6 x 5 m (x,z)
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(W,D),new THREE.MeshStandardMaterial({color:0x1d2b25,roughness:.9}));floor.rotation.x=-Math.PI/2;S.add(floor);
+const grid=new THREE.GridHelper(6,12,0x2a3a33,0x23312b);grid.position.y=.005;S.add(grid);
+const wallM=new THREE.MeshStandardMaterial({color:0x26362f,transparent:true,opacity:.55});
+const back=new THREE.Mesh(new THREE.BoxGeometry(W,2.4,.08),wallM);back.position.set(0,1.2,-D/2);S.add(back);
+const left=new THREE.Mesh(new THREE.BoxGeometry(.08,2.4,D),wallM);left.position.set(-W/2,1.2,0);S.add(left);
+// bed + chair (static furniture: what the learned layout contains)
+const bed=new THREE.Group();bed.add(new THREE.Mesh(new THREE.BoxGeometry(1.0,.35,2.0),new THREE.MeshStandardMaterial({color:0x6b7f9a})));
+const pil=new THREE.Mesh(new THREE.BoxGeometry(.8,.1,.35),new THREE.MeshStandardMaterial({color:0xe9e4d6}));pil.position.set(0,.22,-.78);bed.add(pil);bed.position.set(-2.1,.18,-1.3);S.add(bed);
+const chair=new THREE.Mesh(new THREE.BoxGeometry(.5,.45,.5),new THREE.MeshStandardMaterial({color:0x8a6a4a}));chair.position.set(1.9,.23,-1.6);S.add(chair);
+
+/* ---- nodes: board positions in metres ---- */
+const POS={R:[0,1.9,-D/2+.3],1:[-2.6,.9,1.9],2:[2.6,.9,1.9],3:[0,.9,-0.2]};
+const nodes={};let pairs=[];
+function mkNode(id,hex){const g=new THREE.Group(),m=new THREE.MeshStandardMaterial({color:hex,emissive:hex,emissiveIntensity:.8,roughness:.4});
+ const body=new THREE.Mesh(new THREE.BoxGeometry(.28,.18,.28),m);g.add(body);
+ const ant=new THREE.Mesh(new THREE.CylinderGeometry(.012,.012,.3),new THREE.MeshStandardMaterial({color:0xcccccc}));ant.position.y=.24;g.add(ant);
+ const halo=new THREE.Mesh(new THREE.RingGeometry(.22,.26,40),new THREE.MeshBasicMaterial({color:hex,transparent:true,opacity:.5,side:2}));halo.rotation.x=-Math.PI/2;halo.position.y=-.8;g.add(halo);
+ const pole=new THREE.Mesh(new THREE.CylinderGeometry(.015,.015,.8),new THREE.MeshStandardMaterial({color:0x44524b}));pole.position.y=-.4;g.add(pole);
+ g.position.set(...POS[id]);S.add(g);return {g,m,halo,id,hex,live:1,dim:1};}
+function buildNodes(){for(const k in nodes){S.remove(nodes[k].g)}Object.keys(nodes).forEach(k=>delete nodes[k]);
+ nodes.R=mkNode("R",0xb7c2bb);nodes.R.m.emissiveIntensity=.3;
+ for(const b of cfg.boards)nodes[b.id]=mkNode(String(b.id),COLS[b.colour]||0xdddddd);
+ const ids=["R",...cfg.boards.map(b=>String(b.id))];pairs=[];
+ for(let i=0;i<ids.length;i++)for(let j=i+1;j<ids.length;j++)pairs.push([ids[i],ids[j]]);
+ buildLinks();}
+/* ---- links: each undirected pair is one tube, with packet dots travelling a>b and b>a ---- */
+let links=[];
+function buildLinks(){links.forEach(l=>{S.remove(l.line);l.dots.forEach(d=>S.remove(d.m))});links=[];
+ for(const [a,b] of pairs){const A=new THREE.Vector3(...POS[a]),B=new THREE.Vector3(...POS[b]);
+  const mid=A.clone().lerp(B,.5);mid.y+=.25+.1*Math.random();const curve=new THREE.QuadraticBezierCurve3(A,mid,B);
+  const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(curve.getPoints(40)),new THREE.LineBasicMaterial({color:0x6fd1a3,transparent:true,opacity:.5}));S.add(line);
+  const dots=[];for(const dir of [0,1])for(let k=0;k<3;k++){const m=new THREE.Mesh(new THREE.SphereGeometry(.05,10,10),new THREE.MeshBasicMaterial({color:0xffffff,transparent:true}));S.add(m);dots.push({m,dir,ph:k/3+dir*.17});}
+  links.push({a,b,curve,line,dots,live:false,pps:0,dist:0,phase:Math.random()});}}
+buildNodes();
+
+/* ---- person (posture-driven) ---- */
+const person=new THREE.Group();const pm=new THREE.MeshStandardMaterial({color:0xe9c9a0,roughness:.6});
+const head=new THREE.Mesh(new THREE.SphereGeometry(.12,16,16),pm),torso=new THREE.Mesh(new THREE.CapsuleGeometry(.14,.5,6,12),pm),
+ legs=new THREE.Mesh(new THREE.CapsuleGeometry(.1,.55,6,12),pm);person.add(head,torso,legs);S.add(person);
+const ring=new THREE.Mesh(new THREE.RingGeometry(.5,.56,48),new THREE.MeshBasicMaterial({color:0xff5a46,transparent:true,opacity:0,side:2}));ring.rotation.x=-Math.PI/2;ring.position.y=.02;S.add(ring);
+const TARGET={nobody:{vis:0},standing:{vis:1,p:[.4,0,.2],pose:"stand"},sitting:{vis:1,p:[1.9,0,-1.2],pose:"sit"},lying:{vis:1,p:[-2.1,.4,-1.3],pose:"lie"},walking:{vis:1,p:[0,0,.6],pose:"walk"}};
+function setPose(pose,t){ // joint-free: reposition 3 capsules
+ if(pose==="stand"||pose==="walk"){const sw=pose==="walk"?Math.sin(t*5)*.08:0;head.position.set(0,1.62,0);torso.position.set(0,1.2,0);torso.rotation.set(0,0,0);legs.position.set(sw,.55,0);legs.rotation.set(0,0,0)}
+ else if(pose==="sit"){head.position.set(0,1.2,0);torso.position.set(0,.85,0);torso.rotation.set(0,0,0);legs.position.set(.3,.5,0);legs.rotation.set(0,0,Math.PI/2)}
+ else if(pose==="lie"){head.position.set(0,0,-.75);torso.position.set(0,0,-.2);torso.rotation.set(Math.PI/2,0,0);legs.position.set(0,0,.55);legs.rotation.set(Math.PI/2,0,0)}}
+
+/* ---- camera presets (fixed views for demos/screenshots) ---- */
+const PRESETS={Corner:{p:[6.2,5,6.4],t:[0,.6,0]},Top:{p:[0,10.5,.01],t:[0,0,0]},"Bed view":{p:[-.8,2.6,2.6],t:[-2.1,.3,-1.3]},Door:{p:[0,2.2,5.5],t:[0,.9,-.5]},Orbit:null};
+let preset="Corner",camP=new THREE.Vector3(...PRESETS.Corner.p),camT=new THREE.Vector3(...PRESETS.Corner.t);
+function setPreset(n){preset=n;document.querySelectorAll("#cams button").forEach(b=>b.classList.toggle("on",b.dataset.n===n));try{history.replaceState(null,"","#"+encodeURIComponent(n))}catch(e){}}
+$("#cams").innerHTML=Object.keys(PRESETS).map(n=>`<button data-n="${n}">${n}</button>`).join("");
+$("#cams").onclick=e=>{if(e.target.dataset.n)setPreset(e.target.dataset.n)};
+setPreset(decodeURIComponent(location.hash.slice(1))in PRESETS?decodeURIComponent(location.hash.slice(1)):"Corner");
+
+/* ---- data: stream -> state ---- */
+const base={};let est=null,lastT=0,links9={};
+function ingest(m){links9=m.links||{};if(m.move&&m.move.ids)window.__ids=m.move.ids;est=m.move_est;
+ for(const k in links9){const o=links9[k];if(base[k]==null)base[k]=Math.max(o.motion,1e-4);
+  if(est&&est.status==="ok"&&est.best==="nobody")base[k]=.97*base[k]+.03*o.motion;}   // quiet level: learned only while the model says the room is empty
+ for(const l of links){const keys=[l.a+">"+l.b,l.b+">"+l.a].filter(k=>links9[k]);
+  l.dirLive=[l.a+">"+l.b,l.b+">"+l.a].map(k=>!!links9[k]&&links9[k].pps>=5);l.live=l.dirLive[0]||l.dirLive[1];l.pps=Math.max(0,...keys.map(k=>links9[k].pps));
+  l.dist=keys.length?Math.max(...keys.map(k=>links9[k].motion/base[k])):0;}
+ for(const id in nodes){if(id==="R")continue;const mine=links.filter(l=>l.a===id||l.b===id);const live=mine.filter(l=>l.live).length;nodes[id].live=mine.length?live/mine.length:0;}
+ lastT=performance.now();render(m)}
+function render(m){
+ const e=est;let key="nobody",sub="";
+ if(!e||e.status==="waiting for links"){key=null;$("#st").textContent=e?"Checking…":"—";$("#sub").textContent=e?"waiting for all trained links":"model not trained yet — train from the movement page";}
+ else if(e.status==="unfamiliar"){key="unfamiliar";$("#st").textContent="Something looks different";$("#sub").textContent=`novelty ${e.novelty.toFixed(2)}× normal — not guessing`;}
+ else{key=e.best;$("#st").textContent=(e.status==="unsure"?"Probably ":"")+(NAMES[key]||key);$("#sub").textContent=`confidence ${Math.round(e.confidence*100)}%`+(e.novelty!=null?` · novelty ${e.novelty.toFixed(2)}×`:"")}
+ window.__key=key;
+ // evidence panel: top 6 pairs by disturbance
+ const top=[...links].sort((a,b)=>b.dist-a.dist).slice(0,6),mx=Math.max(2,...top.map(l=>l.dist));
+ $("#evl").innerHTML=top.map(l=>`<div class="erow"><div>${l.a==="R"?"router":l.a}↔${l.b}</div><div><i style="width:${Math.min(100,100*l.dist/mx)}%;background:${l.live?"#6fd1a3":"#b4483a"}"></i></div><span>${l.live?l.dist.toFixed(1)+"×":"down"}</span></div>`).join("");
+ const need=(window.__ids=(window.__ids||[])),down=need.filter(id=>!links9[id]||links9[id].pps<5),w=$("#warn");
+ if(down.length){w.style.display="block";w.textContent=`${down.length} of ${need.length} trained links not streaming (${down.map(d=>d.replace("R","router").replace(">","→")).join(", ")}). The model waits for all trained links; the answer may be missing or less reliable.`}else w.style.display="none";
+}
+(function conn(){const es=new EventSource("/stream");es.onmessage=ev=>ingest(JSON.parse(ev.data));es.onerror=()=>{$("#sub").textContent="reconnecting…"}})();
+
+/* ---- animate ---- */
+function resize(){R.setSize(innerWidth,innerHeight);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix()}addEventListener("resize",resize);resize();
+const clock=new THREE.Clock();let pp=new THREE.Vector3(),pv=0,cur="nobody",ringA=0;
+function frame(){const dt=Math.min(.05,clock.getDelta()),t=clock.elapsedTime;
+ // links
+ for(const l of links){const k=Math.min(1,l.dist/4),c=new THREE.Color().setHSL(.42-.42*k*.9,.7,.5);
+  l.line.material.color.copy(l.live?c:new THREE.Color(0x555555));l.line.material.opacity=l.live?.35+.55*k:.12;
+  const speed=l.live?Math.min(1.2,.25+l.pps/20):0;
+  for(const d of l.dots){d.ph=(d.ph+dt*speed*(.6+.5*k))%1;const u=d.dir?1-d.ph:d.ph;l.curve.getPoint(u,d.m.position);
+   d.m.material.color.copy(new THREE.Color(nodes[d.dir?l.b:l.a]?nodes[d.dir?l.b:l.a].hex:0xffffff));d.m.material.opacity=(l.dirLive&&l.dirLive[d.dir])?.95:0;d.m.scale.setScalar(.7+.6*k);}}
+ // nodes: dim when most of their links are down
+ for(const id in nodes){const n=nodes[id];if(id==="R")continue;n.dim+=((.15+.85*n.live)-n.dim)*Math.min(1,dt*3);n.m.emissiveIntensity=.15+.9*n.dim*(.85+.15*Math.sin(t*3+Number(id)));n.halo.material.opacity=.15+.45*n.dim;n.halo.scale.setScalar(1+.15*Math.sin(t*2+Number(id)))}
+ // person
+ const key=window.__key,tg=TARGET[key]||TARGET.nobody;
+ if(key&&key!==cur&&TARGET[key]){cur=key}
+ person.visible=!!tg.vis&&key!=="unfamiliar";if(tg.p){const T=new THREE.Vector3(...tg.p);if(cur==="walking")T.x=Math.sin(t*.8)*1.6;person.position.lerp(T,Math.min(1,dt*3));}
+ if(tg.pose)setPose(tg.pose,t);
+ person.rotation.y=cur==="walking"?Math.cos(t*.8)>0?Math.PI/2:-Math.PI/2:0;
+ ring.material.opacity=key==="unfamiliar"?.5+.4*Math.sin(t*4):0;ring.scale.setScalar(1+((t*.8)%1)*3);
+ // camera
+ if(preset==="Orbit"){camP.set(Math.cos(t*.12)*7.2,4.6,Math.sin(t*.12)*7.2+1);camT.set(0,.7,0)}
+ else{const P=PRESETS[preset];camP.lerp(new THREE.Vector3(...P.p),Math.min(1,dt*4));camT.lerp(new THREE.Vector3(...P.t),Math.min(1,dt*4))}
+ cam.position.copy(camP);cam.lookAt(camT);R.render(S,cam);requestAnimationFrame(frame)}
+frame();window.__nodes3d={links:()=>links.map(l=>({a:l.a,b:l.b,live:l.live,dist:l.dist})),setPreset};
+</script></body></html>
