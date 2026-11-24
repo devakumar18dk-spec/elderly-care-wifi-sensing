@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1200 250" width="1200" height="250" role="img" aria-label="Pipeline from boards to caretaker page">
+<rect width="1200" height="250" rx="16" fill="#0f1714"/>
+<rect x="40" y="70" width="170" height="90" rx="14" fill="#16221d" stroke="#d08a2e" stroke-width="2"/><text x="125" y="108" text-anchor="middle" font-family="Segoe UI,Arial" font-size="19" font-weight="700" fill="#e8efe9">ESP32-S3 x3</text><text x="125" y="136" text-anchor="middle" font-family="Segoe UI,Arial" font-size="15" fill="#9fb0a6">+ router</text>
+<path id="a0" d="M210,115 L272,115" stroke="#556" stroke-width="2"/>
+<circle r="5" fill="#6fd1a3"><animateMotion dur="1.6s" begin="0.00s" repeatCount="indefinite"><mpath xlink:href="#a0"/></animateMotion></circle>
+<circle r="5" fill="#6fd1a3"><animateMotion dur="1.6s" begin="0.53s" repeatCount="indefinite"><mpath xlink:href="#a0"/></animateMotion></circle>
+<circle r="5" fill="#6fd1a3"><animateMotion dur="1.6s" begin="1.06s" repeatCount="indefinite"><mpath xlink:href="#a0"/></animateMotion></circle>
+<rect x="272" y="70" width="170" height="90" rx="14" fill="#16221d" stroke="#2f7d62" stroke-width="2"/><text x="357" y="108" text-anchor="middle" font-family="Segoe UI,Arial" font-size="19" font-weight="700" fill="#e8efe9">PC server</text><text x="357" y="136" text-anchor="middle" font-family="Segoe UI,Arial" font-size="15" fill="#9fb0a6">UDP + links</text>
+<path id="a1" d="M442,115 L504,115" stroke="#556" stroke-width="2"/>
+<circle r="5" fill="#6fd1a3"><animateMotion dur="1.6s" begin="0.00s" repeatCount="indefinite"><mpath xlink:href="#a1"/></animateMotion></circle>
+<circle r="5" fill="#6fd1a3"><animateMotion dur="1.6s" begin="0.53s" repeatCount="indefinite"><mpath xlink:href="#a1"/></animateMotion></circle>
+<circle r="5" fill="#6fd1a3"><animateMotion dur="1.6s" begin="1.06s" repeatCount="indefinite"><mpath xlink:href="#a1"/></animateMotion></circle>
+<rect x="504" y="70" width="170" height="90" rx="14" fill="#16221d" stroke="#2f7d62" stroke-width="2"/><text x="589" y="108" text-anchor="middle" font-family="Segoe UI,Arial" font-size="19" font-weight="700" fill="#e8efe9">Features</text><text x="589" y="136" text-anchor="middle" font-family="Segoe UI,Arial" font-size="15" fill="#9fb0a6">156 / link</text>
+<path id="a2" d="M674,115 L736,115" stroke="#556" stroke-width="2"/>
+<circle r="5" fill="#6fd1a3"><animateMotion dur="1.6s" begin="0.00s" repeatCount="indefinite"><mpath xlink:href="#a2"/></animateMotion></circle>
+<circle r="5" fill="#6fd1a3"><animateMotion dur="1.6s" begin="0.53s" repeatCount="indefinite"><mpath xlink:href="#a2"/></animateMotion></circle>
+<circle r="5" fill="#6fd1a3"><animateMotion dur="1.6s" begin="1.06s" repeatCount="indefinite"><mpath xlink:href="#a2"/></animateMotion></circle>
+<rect x="736" y="70" width="170" height="90" rx="14" fill="#16221d" stroke="#3b6ea5" stroke-width="2"/><text x="821" y="108" text-anchor="middle" font-family="Segoe UI,Arial" font-size="19" font-weight="700" fill="#e8efe9">kNN + novelty</text><text x="821" y="136" text-anchor="middle" font-family="Segoe UI,Arial" font-size="13" fill="#9fb0a6">posture / unfamiliar</text>
+<path id="a3" d="M906,115 L968,115" stroke="#556" stroke-width="2"/>
+<circle r="5" fill="#6fd1a3"><animateMotion dur="1.6s" begin="0.00s" repeatCount="indefinite"><mpath xlink:href="#a3"/></animateMotion></circle>
+<circle r="5" fill="#6fd1a3"><animateMotion dur="1.6s" begin="0.53s" repeatCount="indefinite"><mpath xlink:href="#a3"/></animateMotion></circle>
+<circle r="5" fill="#6fd1a3"><animateMotion dur="1.6s" begin="1.06s" repeatCount="indefinite"><mpath xlink:href="#a3"/></animateMotion></circle>
+<rect x="968" y="70" width="170" height="90" rx="14" fill="#16221d" stroke="#7a6bb0" stroke-width="2"/><text x="1053" y="108" text-anchor="middle" font-family="Segoe UI,Arial" font-size="19" font-weight="700" fill="#e8efe9">Caretaker</text><text x="1053" y="136" text-anchor="middle" font-family="Segoe UI,Arial" font-size="15" fill="#9fb0a6">page + 3D</text>
+<text x="609" y="35" text-anchor="middle" font-family="Segoe UI,Arial" font-size="22" font-weight="700" fill="#6fd1a3">Teach once with a camera. Then it needs Wi-Fi only.</text>
+<rect x="440" y="190" width="170" height="40" rx="20" fill="#1c2b25" stroke="#3b6ea5"/><text x="525" y="216" text-anchor="middle" font-family="Segoe UI,Arial" font-size="15" fill="#e8efe9">camera: teaching only</text>
+<path id="t" d="M525,190 L525,162" stroke="#3b6ea5" stroke-width="2" stroke-dasharray="4 4"/><circle r="4" fill="#4b8fd6"><animateMotion dur="1.4s" repeatCount="indefinite"><mpath xlink:href="#t"/></animateMotion></circle>
+<rect x="640" y="190" width="170" height="40" rx="20" fill="#1c2b25" stroke="#7a6bb0"/><text x="725" y="216" text-anchor="middle" font-family="Segoe UI,Arial" font-size="15" fill="#e8efe9">judge: is it healthy?</text></svg>
